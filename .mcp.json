@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "sec-edgar": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "stefanoamorelli/sec-edgar-mcp:latest"]
+    },
+    "yfinance": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@szemeng76/yfinance-mcp-server"]
+    },
+    "fred": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@stefanoamorelli/fred-mcp-server"],
+      "env": {
+        "FRED_API_KEY": "${FRED_API_KEY}"
+      }
+    }
+  }
+}

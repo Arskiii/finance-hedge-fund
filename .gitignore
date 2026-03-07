@@ -1,0 +1,23 @@
+# Analysis outputs (large, regeneratable)
+analysis/
+
+# API keys and local overrides
+CLAUDE.local.md
+.env
+*.env
+
+# Claude local settings
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+vendor/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
