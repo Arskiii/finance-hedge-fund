@@ -81,6 +81,31 @@ class FinancialDatasetsClient:
         r.raise_for_status()
         return r.json().get("company_facts", {}) or {}
 
+    def get_filings(self, ticker: str, limit: int = 50) -> list[dict]:
+        r = self._client.get("/filings/", params={"ticker": ticker, "limit": limit})
+        if r.status_code == 404:
+            return []
+        r.raise_for_status()
+        return r.json().get("filings", []) or []
+
+    def get_filing_items(
+        self,
+        filing_id: str | None,
+        item_types: Iterable[str] | None = None,
+    ) -> str:
+        """Concatenated text of the requested filing items, blank if unavailable."""
+        if not filing_id:
+            return ""
+        params: dict[str, str] = {"filing_id": filing_id}
+        if item_types:
+            params["item_types"] = ",".join(item_types)
+        r = self._client.get("/filing-items/", params=params)
+        if r.status_code == 404:
+            return ""
+        r.raise_for_status()
+        items = r.json().get("filing_items", []) or []
+        return "\n\n".join(item.get("text", "") for item in items if item.get("text"))
+
     def get_insider_trades(self, ticker: str, limit: int = 1000) -> pd.DataFrame:
         r = self._client.get(
             "/insider-trades/",

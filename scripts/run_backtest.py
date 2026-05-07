@@ -2,14 +2,17 @@
 
   1. Load a point-in-time universe and a sectors map.
   2. Pull prices, financial metrics, insider trades, and a market proxy.
-  3. Build a momentum + quality + senior-insider composite.
+  3. Build a momentum + quality + senior-insider composite (and, if
+     ANTHROPIC_API_KEY is set, blend in Claude-scored filing sentiment).
   4. Sector- and beta-neutralize the composite.
   5. Backtest with universe masking.
 
-Requires FINANCIAL_DATASETS_API_KEY in the environment.
+Requires FINANCIAL_DATASETS_API_KEY in the environment. ANTHROPIC_API_KEY
+is optional and enables the LLM-based filing-sentiment signal.
 """
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 
@@ -61,12 +64,30 @@ def main() -> None:
         weighted_insider_signal(trades, monthly_dates, list(prices.columns))
     )
 
-    composite = (
-        mom_z.fillna(0.0)
-        .add(qual_z.fillna(0.0))
-        .add(insider_z.reindex(mom_z.index).reindex(columns=mom_z.columns).fillna(0.0))
-        .div(3.0)
-    )
+    factor_zscores = [mom_z, qual_z, insider_z]
+
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        from hedge_fund.filings import fetch_and_score_filings, filing_sentiment_signal
+        from hedge_fund.llm import FilingAnalyzer
+
+        print("Scoring filings with Claude...")
+        analyzer = FilingAnalyzer()
+        sentiment_per_ticker = fetch_and_score_filings(tickers, client, analyzer)
+        sentiment_z = cross_sectional_zscore(
+            filing_sentiment_signal(
+                sentiment_per_ticker, monthly_dates, list(prices.columns)
+            )
+        )
+        factor_zscores.append(sentiment_z)
+    else:
+        print("ANTHROPIC_API_KEY not set; skipping filing-sentiment factor.")
+
+    template = mom_z
+    aligned = [
+        z.reindex(template.index).reindex(columns=template.columns).fillna(0.0)
+        for z in factor_zscores
+    ]
+    composite = sum(aligned) / len(aligned)
 
     # --- risk neutralization ---
     daily_returns = prices.pct_change()

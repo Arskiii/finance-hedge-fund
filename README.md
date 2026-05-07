@@ -12,22 +12,24 @@ and crowded.
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/hedge_fund/data.py` | Adapter for the financialdatasets.ai REST API and a sectors CSV loader |
+| `src/hedge_fund/data.py` | Adapter for the financialdatasets.ai REST API (prices, fundamentals, insider trades, filings) and a sectors CSV loader |
 | `src/hedge_fund/factors.py` | 12-1 momentum, filing-lagged quality, raw and senior-only insider signals |
 | `src/hedge_fund/risk.py` | Rolling beta, sector and beta neutralization |
 | `src/hedge_fund/universe.py` | Point-in-time index membership |
+| `src/hedge_fund/llm.py` | `FilingAnalyzer` — Claude-backed structured scoring with prompt caching |
+| `src/hedge_fund/filings.py` | Fetch and score 10-K/10-Q sections; aggregate into a per-rebalance signal |
 | `src/hedge_fund/backtest.py` | Monthly long-only top-quantile backtester with optional universe mask |
 | `data/sp500_membership_sample.csv` | Sample (as_of_date, ticker) snapshots — replace with a real source |
 | `data/sectors_sample.csv` | Sample (ticker, sector) classification — replace with a real source |
 | `scripts/run_backtest.py` | Full pipeline: signals → sector/beta neutralization → masked backtest |
-| `tests/` | Unit tests for factors, risk, universe, and the backtester |
+| `tests/` | Unit tests for factors, risk, universe, llm, filings, and the backtester |
 
 ## Setup
 
 ```sh
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env  # then fill in FINANCIAL_DATASETS_API_KEY
+pip install -e ".[dev,llm]"   # drop ",llm" if you don't want the Anthropic SDK
+cp .env.example .env          # fill FINANCIAL_DATASETS_API_KEY (and optionally ANTHROPIC_API_KEY)
 ```
 
 ## Run
@@ -64,6 +66,11 @@ python scripts/run_backtest.py # hits the live API
    insider's baseline, or detect clustered buying. The literature shows
    those refinements carry most of the remaining predictive content
    (Cohen-Malloy-Pomorski 2012; Lakonishok-Lee 2001).
+8. **Filing-sentiment costs and caching.** Each filing scored is one
+   Anthropic API call. `fetch_and_score_filings` does no persistence — a
+   real backtest should cache per-filing scores to disk so you only pay
+   for new filings. Truncating long filings to 60k chars is a cost / signal
+   trade-off; the model may miss material in items past the cutoff.
 
 ## What it takes to actually run a fund
 
