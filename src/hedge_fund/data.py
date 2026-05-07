@@ -74,6 +74,21 @@ class FinancialDatasetsClient:
             df = df.set_index("report_period").sort_index()
         return df
 
+    def get_insider_trades(self, ticker: str, limit: int = 1000) -> pd.DataFrame:
+        r = self._client.get(
+            "/insider-trades/",
+            params={"ticker": ticker, "limit": limit},
+        )
+        r.raise_for_status()
+        rows = r.json().get("insider_trades", [])
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        if "transaction_date" in df.columns:
+            df["transaction_date"] = pd.to_datetime(df["transaction_date"])
+            df = df.set_index("transaction_date").sort_index()
+        return df
+
     def close(self) -> None:
         self._client.close()
 

@@ -52,6 +52,34 @@ def test_backtest_picks_top_assets_and_grows_equity():
     assert last_w["S0"] == 0
 
 
+def test_backtest_respects_universe_mask():
+    np.random.seed(2)
+    idx = pd.date_range("2020-01-01", periods=600, freq="B")
+    n = 5
+    drifts = np.array([0.0010, 0.0008, 0.0006, 0.0004, 0.0002])  # S0 best
+    rets = np.random.normal(loc=drifts, scale=0.005, size=(len(idx), n))
+    prices = pd.DataFrame(
+        np.cumprod(1 + rets, axis=0) * 100.0,
+        index=idx,
+        columns=[f"S{i}" for i in range(n)],
+    )
+    monthly_idx = prices.resample("ME").last().index
+    signal = pd.DataFrame(
+        np.tile(drifts, (len(monthly_idx), 1)),
+        index=monthly_idx,
+        columns=prices.columns,
+    )
+    # Mask excludes S0 (the highest-drift name) — backtest must skip it.
+    mask = pd.DataFrame(True, index=monthly_idx, columns=prices.columns)
+    mask["S0"] = False
+    result = run_backtest(prices, signal, universe_mask=mask, top_pct=0.5, cost_bps=0.0)
+    assert (result.weights["S0"] == 0).all()
+    last_w = result.weights.dropna(how="all").iloc[-1]
+    # Top half of the four allowed names (S1..S4) by drift should be S1 and S2.
+    assert last_w["S1"] > 0 and last_w["S2"] > 0
+    assert last_w["S3"] == 0 and last_w["S4"] == 0
+
+
 def test_backtest_summary_contains_expected_keys():
     np.random.seed(1)
     idx = pd.date_range("2021-01-01", periods=300, freq="B")

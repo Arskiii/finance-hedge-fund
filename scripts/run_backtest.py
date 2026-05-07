@@ -1,35 +1,64 @@
-"""End-to-end demo: pull prices and metrics, build a quality+momentum signal,
-and run the monthly long-only top-quintile backtest.
+"""End-to-end demo: load a point-in-time universe, fetch prices/metrics/insider
+trades, build a momentum + quality + insider-flow composite, and backtest with
+universe masking.
 
 Requires FINANCIAL_DATASETS_API_KEY in the environment.
 """
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 from hedge_fund.backtest import run_backtest
-from hedge_fund.data import DEFAULT_UNIVERSE, FinancialDatasetsClient, load_price_panel
-from hedge_fund.factors import cross_sectional_zscore, momentum_12_1, quality_score
+from hedge_fund.data import FinancialDatasetsClient, load_price_panel
+from hedge_fund.factors import (
+    cross_sectional_zscore,
+    insider_buying_signal,
+    momentum_12_1,
+    quality_score,
+)
+from hedge_fund.universe import PointInTimeUniverse
+
+UNIVERSE_CSV = Path(__file__).resolve().parent.parent / "data" / "sp500_membership_sample.csv"
 
 
 def main() -> None:
     client = FinancialDatasetsClient()
     start, end = date(2018, 1, 1), date(2024, 12, 31)
 
-    print(f"Loading prices for {len(DEFAULT_UNIVERSE)} tickers...")
-    prices = load_price_panel(DEFAULT_UNIVERSE, start, end, client)
+    universe = PointInTimeUniverse.from_csv(UNIVERSE_CSV)
+    tickers = universe.all_tickers
+    print(f"Universe has {len(tickers)} unique tickers across "
+          f"{len(universe.snapshots)} snapshots.")
+
+    print("Loading prices...")
+    prices = load_price_panel(tickers, start, end, client)
     if prices.empty:
         raise SystemExit("No price data returned. Check your API key and tickers.")
 
     print("Loading financial metrics...")
-    metrics = {t: client.get_financial_metrics(t) for t in DEFAULT_UNIVERSE}
+    metrics = {t: client.get_financial_metrics(t) for t in tickers}
+
+    print("Loading insider trades...")
+    trades = {t: client.get_insider_trades(t) for t in tickers}
+
+    monthly_dates = prices.resample("ME").last().index
 
     mom_z = cross_sectional_zscore(momentum_12_1(prices))
     qual_z = quality_score(metrics).reindex(mom_z.index).reindex(columns=mom_z.columns)
+    insider_z = cross_sectional_zscore(
+        insider_buying_signal(trades, monthly_dates, list(prices.columns))
+    )
 
-    combined = mom_z.add(qual_z, fill_value=0.0).div(2.0)
+    combined = (
+        mom_z.fillna(0.0)
+        .add(qual_z.fillna(0.0))
+        .add(insider_z.reindex(mom_z.index).reindex(columns=mom_z.columns).fillna(0.0))
+        .div(3.0)
+    )
 
-    result = run_backtest(prices, combined, top_pct=0.2, cost_bps=10.0)
+    mask = universe.mask(monthly_dates, list(prices.columns))
+    result = run_backtest(prices, combined, universe_mask=mask, top_pct=0.2, cost_bps=10.0)
 
     print("\nBacktest summary:")
     for k, v in result.summary().items():

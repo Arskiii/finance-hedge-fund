@@ -1,7 +1,13 @@
 import numpy as np
 import pandas as pd
+import pytest
 
-from hedge_fund.factors import cross_sectional_zscore, momentum_12_1, quality_score
+from hedge_fund.factors import (
+    cross_sectional_zscore,
+    insider_buying_signal,
+    momentum_12_1,
+    quality_score,
+)
 
 
 def test_momentum_12_1_uses_11_month_return_lagged():
@@ -63,3 +69,85 @@ def test_quality_score_aggregates_two_columns():
     assert not q.empty
     last = q.iloc[-1]
     assert last["A"] > last["C"] > last["B"]
+
+
+def test_quality_score_lags_report_period_by_default():
+    # report_period 2023-03-31 with default 75-day lag becomes available
+    # ~2023-06-14, so first non-NaN row should be no earlier than 2023-06-30.
+    idx = pd.date_range("2023-03-31", periods=2, freq="QE")
+    metrics = {
+        "A": pd.DataFrame(
+            {"return_on_invested_capital": [0.2, 0.2], "gross_margin": [0.5, 0.5]},
+            index=idx,
+        ),
+        "B": pd.DataFrame(
+            {"return_on_invested_capital": [0.1, 0.1], "gross_margin": [0.3, 0.3]},
+            index=idx,
+        ),
+    }
+    q = quality_score(metrics, filing_lag_days=75)
+    first = q.dropna(how="all").index.min()
+    assert first >= pd.Timestamp("2023-06-30")
+
+
+def test_quality_score_uses_filing_date_when_present():
+    idx = pd.date_range("2023-03-31", periods=2, freq="QE")
+    # filing_date is two months earlier than report_period+lag would suggest;
+    # the explicit field should win.
+    df_a = pd.DataFrame(
+        {
+            "return_on_invested_capital": [0.2, 0.2],
+            "gross_margin": [0.5, 0.5],
+            "filing_date": ["2023-04-15", "2023-07-15"],
+        },
+        index=idx,
+    )
+    df_b = pd.DataFrame(
+        {
+            "return_on_invested_capital": [0.1, 0.1],
+            "gross_margin": [0.3, 0.3],
+            "filing_date": ["2023-04-15", "2023-07-15"],
+        },
+        index=idx,
+    )
+    q = quality_score({"A": df_a, "B": df_b}, filing_lag_days=75)
+    first = q.dropna(how="all").index.min()
+    assert first == pd.Timestamp("2023-04-30")
+
+
+def test_insider_buying_signal_sums_window():
+    trades = {
+        "A": pd.DataFrame(
+            {
+                "transaction_shares": [1000, -500, 2000],
+                "transaction_price_per_share": [100.0, 100.0, 100.0],
+            },
+            index=pd.to_datetime(["2024-01-15", "2024-02-15", "2024-03-15"]),
+        ),
+    }
+    rebalance = pd.DatetimeIndex(["2024-03-31"])
+    sig = insider_buying_signal(trades, rebalance, ["A"], window_days=120)
+    assert sig.loc["2024-03-31", "A"] == pytest.approx(250_000.0)
+
+
+def test_insider_buying_signal_excludes_outside_window():
+    trades = {
+        "A": pd.DataFrame(
+            {
+                "transaction_shares": [1000, 1000],
+                "transaction_price_per_share": [100.0, 100.0],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-06-01"]),
+        ),
+    }
+    rebalance = pd.DatetimeIndex(["2024-06-30"])
+    sig = insider_buying_signal(trades, rebalance, ["A"], window_days=60)
+    # Only the 2024-06-01 trade falls in the 60-day window.
+    assert sig.loc["2024-06-30", "A"] == pytest.approx(100_000.0)
+
+
+def test_insider_buying_signal_skips_tickers_without_data():
+    rebalance = pd.DatetimeIndex(["2024-03-31"])
+    sig = insider_buying_signal({}, rebalance, ["A", "B"], window_days=90)
+    assert sig.shape == (1, 2)
+    assert (sig == 0.0).all().all()

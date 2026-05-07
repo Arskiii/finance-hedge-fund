@@ -55,17 +55,29 @@ def top_quantile_weights(signal: pd.DataFrame, top_pct: float = 0.2) -> pd.DataF
 def run_backtest(
     prices: pd.DataFrame,
     signal: pd.DataFrame,
+    universe_mask: pd.DataFrame | None = None,
     top_pct: float = 0.2,
     cost_bps: float = 10.0,
 ) -> BacktestResult:
     """Monthly rebalanced long-only backtest.
 
     The signal value at month-end t determines weights held over [t, t+1].
-    Transaction costs are charged on turnover at the rebalance.
+    Transaction costs are charged on turnover at the rebalance. When
+    `universe_mask` is provided (boolean DataFrame, rows=dates, cols=tickers),
+    names that were not in the universe at rebalance t are excluded from
+    the selection at t.
     """
     monthly = prices.resample("ME").last()
     fwd_returns = monthly.pct_change().shift(-1)
     aligned = signal.reindex(monthly.index).reindex(columns=monthly.columns)
+    if universe_mask is not None:
+        mask = (
+            universe_mask.reindex(monthly.index, method="ffill")
+            .reindex(columns=monthly.columns)
+            .fillna(False)
+            .astype(bool)
+        )
+        aligned = aligned.where(mask, np.nan)
     weights = top_quantile_weights(aligned, top_pct=top_pct)
 
     gross = (weights * fwd_returns).sum(axis=1)

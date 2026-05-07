@@ -12,11 +12,13 @@ and crowded.
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/hedge_fund/data.py` | Adapter for the financialdatasets.ai REST API |
-| `src/hedge_fund/factors.py` | 12-1 momentum and quality factor signals |
-| `src/hedge_fund/backtest.py` | Monthly long-only top-quantile backtester with metrics |
-| `scripts/run_backtest.py` | Runnable end-to-end example |
-| `tests/` | Unit tests for factors and the backtester |
+| `src/hedge_fund/data.py` | Adapter for the financialdatasets.ai REST API (prices, financial metrics, insider trades) |
+| `src/hedge_fund/factors.py` | 12-1 momentum, quality (filing-lagged), and insider-buying signals |
+| `src/hedge_fund/universe.py` | Point-in-time index membership |
+| `src/hedge_fund/backtest.py` | Monthly long-only top-quantile backtester with optional universe mask |
+| `data/sp500_membership_sample.csv` | Tiny sample of (as_of_date, ticker) snapshots — replace with a real source |
+| `scripts/run_backtest.py` | End-to-end demo combining all three signals with universe masking |
+| `tests/` | Unit tests for factors, universe, and the backtester |
 
 ## Setup
 
@@ -35,16 +37,24 @@ python scripts/run_backtest.py # hits the live API
 
 ## Honest limitations
 
-1. **Survivorship bias.** The demo universe is today's mega-caps. Real backtests
-   require point-in-time index membership snapshots.
-2. **Fundamental look-ahead.** `quality_score` uses the report period as the
-   available-as-of date; the actual filing typically lags by 30-90 days.
+1. **Survivorship bias — partially addressed.** `PointInTimeUniverse` enforces
+   that only names in the index on date `t` can be selected at `t`. The
+   bundled sample CSV has three snapshots and is illustrative only — for real
+   work, replace it with a proper membership source (CRSP/Compustat, the
+   iShares holdings history, or a curated Wikipedia + delisting log).
+2. **Fundamental look-ahead — partially addressed.** `quality_score` stamps
+   each row with `filing_date` if the API exposes it, otherwise applies a
+   conservative 75-day lag from `report_period`. Restatements and amendments
+   are not handled.
 3. **Naïve transaction costs.** A flat 10 bps assumption ignores liquidity,
    market impact, and short borrow costs.
 4. **No risk model.** Production work needs factor risk decomposition,
    sector/beta neutrality, and explicit position limits.
 5. **No execution layer.** The backtester stops at portfolio weights; live
    trading requires broker integration, slippage modeling, and monitoring.
+6. **Insider-flow signal is unsophisticated.** Net dollar flow ignores
+   officer rank, prior trading patterns, 10b5-1 plans, and clustering — all
+   of which carry most of the predictive content in the academic literature.
 
 ## What it takes to actually run a fund
 
