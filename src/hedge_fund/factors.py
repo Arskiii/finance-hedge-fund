@@ -66,6 +66,63 @@ def quality_score(
     return stacked.groupby(level="date").mean().sort_index()
 
 
+_SENIOR_TITLE_PATTERN = r"\b(?:CEO|CFO|COO|PRESIDENT|CHAIR|CHAIRMAN)\b"
+
+
+def weighted_insider_signal(
+    trades: dict[str, pd.DataFrame],
+    rebalance_dates: pd.DatetimeIndex,
+    tickers: list[str],
+    window_days: int = 90,
+    min_transaction_value: float = 50_000.0,
+    senior_only: bool = True,
+) -> pd.DataFrame:
+    """Net insider dollar flow restricted to senior officers and meaningful trades.
+
+    Filters apply, in order:
+      1. If `senior_only`, keep only rows where `title` matches CEO/CFO/COO/
+         President/Chair* or `is_board_director` is True.
+      2. Drop trades with absolute dollar value below `min_transaction_value`.
+
+    Per Cohen-Malloy-Pomorski (2012) and Lakonishok-Lee (2001), routine
+    small trades and trades by lower-ranked insiders carry far less
+    predictive content than concentrated buying by C-suite officers. The
+    raw `insider_buying_signal` is preserved for callers that want the
+    unfiltered series.
+    """
+    out = pd.DataFrame(0.0, index=pd.DatetimeIndex(rebalance_dates), columns=list(tickers))
+    ticker_set = set(tickers)
+    for ticker, df in trades.items():
+        if df.empty or ticker not in ticker_set:
+            continue
+        f = df
+        if senior_only:
+            title_mask = (
+                f["title"].fillna("").str.upper().str.contains(_SENIOR_TITLE_PATTERN, regex=True)
+                if "title" in f.columns
+                else pd.Series(False, index=f.index)
+            )
+            director_mask = (
+                f["is_board_director"].fillna(False)
+                if "is_board_director" in f.columns
+                else pd.Series(False, index=f.index)
+            )
+            f = f[title_mask | director_mask]
+        if f.empty:
+            continue
+        if "transaction_shares" in f.columns and "transaction_price_per_share" in f.columns:
+            dollar = f["transaction_shares"] * f["transaction_price_per_share"]
+        elif "transaction_value" in f.columns:
+            dollar = f["transaction_value"]
+        else:
+            continue
+        dollar = dollar[dollar.abs() >= min_transaction_value].sort_index()
+        for d in out.index:
+            window_start = d - pd.Timedelta(days=window_days)
+            out.at[d, ticker] = float(dollar.loc[window_start:d].sum())
+    return out
+
+
 def insider_buying_signal(
     trades: dict[str, pd.DataFrame],
     rebalance_dates: pd.DatetimeIndex,

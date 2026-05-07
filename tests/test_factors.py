@@ -7,6 +7,7 @@ from hedge_fund.factors import (
     insider_buying_signal,
     momentum_12_1,
     quality_score,
+    weighted_insider_signal,
 )
 
 
@@ -151,3 +152,55 @@ def test_insider_buying_signal_skips_tickers_without_data():
     sig = insider_buying_signal({}, rebalance, ["A", "B"], window_days=90)
     assert sig.shape == (1, 2)
     assert (sig == 0.0).all().all()
+
+
+def test_weighted_insider_signal_filters_to_senior_titles():
+    trades = {
+        "A": pd.DataFrame(
+            {
+                "title": ["CEO", "Junior Engineer", "CFO"],
+                "is_board_director": [False, False, False],
+                "transaction_shares": [1000, 1000, 1000],
+                "transaction_price_per_share": [100.0, 100.0, 100.0],
+            },
+            index=pd.to_datetime(["2024-03-01", "2024-03-05", "2024-03-10"]),
+        ),
+    }
+    rebalance = pd.DatetimeIndex(["2024-03-31"])
+    sig = weighted_insider_signal(trades, rebalance, ["A"], window_days=90)
+    # Junior Engineer trade dropped; CEO + CFO = 200_000.
+    assert sig.loc["2024-03-31", "A"] == pytest.approx(200_000.0)
+
+
+def test_weighted_insider_signal_includes_directors_without_senior_title():
+    trades = {
+        "A": pd.DataFrame(
+            {
+                "title": ["Director", "Junior Engineer"],
+                "is_board_director": [True, False],
+                "transaction_shares": [500, 500],
+                "transaction_price_per_share": [200.0, 200.0],
+            },
+            index=pd.to_datetime(["2024-03-01", "2024-03-10"]),
+        ),
+    }
+    rebalance = pd.DatetimeIndex(["2024-03-31"])
+    sig = weighted_insider_signal(trades, rebalance, ["A"], window_days=90)
+    assert sig.loc["2024-03-31", "A"] == pytest.approx(100_000.0)
+
+
+def test_weighted_insider_signal_drops_small_trades():
+    trades = {
+        "A": pd.DataFrame(
+            {
+                "title": ["CEO", "CEO"],
+                "is_board_director": [False, False],
+                "transaction_shares": [10, 1000],   # $1k and $100k
+                "transaction_price_per_share": [100.0, 100.0],
+            },
+            index=pd.to_datetime(["2024-03-01", "2024-03-10"]),
+        ),
+    }
+    rebalance = pd.DatetimeIndex(["2024-03-31"])
+    sig = weighted_insider_signal(trades, rebalance, ["A"], min_transaction_value=50_000.0)
+    assert sig.loc["2024-03-31", "A"] == pytest.approx(100_000.0)

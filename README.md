@@ -12,13 +12,15 @@ and crowded.
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/hedge_fund/data.py` | Adapter for the financialdatasets.ai REST API (prices, financial metrics, insider trades) |
-| `src/hedge_fund/factors.py` | 12-1 momentum, quality (filing-lagged), and insider-buying signals |
+| `src/hedge_fund/data.py` | Adapter for the financialdatasets.ai REST API and a sectors CSV loader |
+| `src/hedge_fund/factors.py` | 12-1 momentum, filing-lagged quality, raw and senior-only insider signals |
+| `src/hedge_fund/risk.py` | Rolling beta, sector and beta neutralization |
 | `src/hedge_fund/universe.py` | Point-in-time index membership |
 | `src/hedge_fund/backtest.py` | Monthly long-only top-quantile backtester with optional universe mask |
-| `data/sp500_membership_sample.csv` | Tiny sample of (as_of_date, ticker) snapshots — replace with a real source |
-| `scripts/run_backtest.py` | End-to-end demo combining all three signals with universe masking |
-| `tests/` | Unit tests for factors, universe, and the backtester |
+| `data/sp500_membership_sample.csv` | Sample (as_of_date, ticker) snapshots — replace with a real source |
+| `data/sectors_sample.csv` | Sample (ticker, sector) classification — replace with a real source |
+| `scripts/run_backtest.py` | Full pipeline: signals → sector/beta neutralization → masked backtest |
+| `tests/` | Unit tests for factors, risk, universe, and the backtester |
 
 ## Setup
 
@@ -48,13 +50,20 @@ python scripts/run_backtest.py # hits the live API
    are not handled.
 3. **Naïve transaction costs.** A flat 10 bps assumption ignores liquidity,
    market impact, and short borrow costs.
-4. **No risk model.** Production work needs factor risk decomposition,
-   sector/beta neutrality, and explicit position limits.
-5. **No execution layer.** The backtester stops at portfolio weights; live
+4. **Partial risk model.** `sector_neutralize` and `beta_neutralize` strip
+   the most obvious unintended exposures, but there is still no full factor
+   risk model (Barra-style), no explicit position limits, and the long-only
+   selection still tilts toward whatever residual factor the signal loads on.
+5. **Static sector mapping.** `sectors_sample.csv` is constant in time;
+   reclassifications (META 2018 IT → Comm. Services) are ignored.
+6. **No execution layer.** The backtester stops at portfolio weights; live
    trading requires broker integration, slippage modeling, and monitoring.
-6. **Insider-flow signal is unsophisticated.** Net dollar flow ignores
-   officer rank, prior trading patterns, 10b5-1 plans, and clustering — all
-   of which carry most of the predictive content in the academic literature.
+7. **Insider-flow signal still simplified.** `weighted_insider_signal`
+   filters to senior officers / directors and meaningful trade sizes, but
+   does not exclude 10b5-1 planned trades, weight by deviation from each
+   insider's baseline, or detect clustered buying. The literature shows
+   those refinements carry most of the remaining predictive content
+   (Cohen-Malloy-Pomorski 2012; Lakonishok-Lee 2001).
 
 ## What it takes to actually run a fund
 

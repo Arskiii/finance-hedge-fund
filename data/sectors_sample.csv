@@ -1,0 +1,31 @@
+ticker,sector
+AAPL,Information Technology
+MSFT,Information Technology
+GOOGL,Communication Services
+AMZN,Consumer Discretionary
+META,Communication Services
+NVDA,Information Technology
+TSLA,Consumer Discretionary
+AVGO,Information Technology
+JPM,Financials
+V,Financials
+MA,Financials
+BAC,Financials
+WFC,Financials
+GS,Financials
+JNJ,Health Care
+PFE,Health Care
+UNH,Health Care
+LLY,Health Care
+MRK,Health Care
+XOM,Energy
+CVX,Energy
+COP,Energy
+WMT,Consumer Staples
+COST,Consumer Staples
+PG,Consumer Staples
+KO,Consumer Staples
+PEP,Consumer Staples
+HD,Consumer Discretionary
+MCD,Consumer Discretionary
+NKE,Consumer Discretionary

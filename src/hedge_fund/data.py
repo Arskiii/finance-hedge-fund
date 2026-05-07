@@ -74,6 +74,13 @@ class FinancialDatasetsClient:
             df = df.set_index("report_period").sort_index()
         return df
 
+    def get_company_facts(self, ticker: str) -> dict:
+        r = self._client.get("/company/facts/", params={"ticker": ticker})
+        if r.status_code == 404:
+            return {}
+        r.raise_for_status()
+        return r.json().get("company_facts", {}) or {}
+
     def get_insider_trades(self, ticker: str, limit: int = 1000) -> pd.DataFrame:
         r = self._client.get(
             "/insider-trades/",
@@ -91,6 +98,20 @@ class FinancialDatasetsClient:
 
     def close(self) -> None:
         self._client.close()
+
+
+def load_sectors(path: str | os.PathLike) -> pd.Series:
+    """Read a (ticker, sector) CSV and return a Series indexed by ticker.
+
+    Sectors are assumed time-invariant for simplicity. For names that change
+    sector classification mid-history (e.g., META moved from IT to
+    Communication Services in 2018), keep the most recent and accept the
+    small modeling error, or extend this loader to take effective dates.
+    """
+    df = pd.read_csv(path)
+    if {"ticker", "sector"} - set(df.columns):
+        raise ValueError("sectors CSV must have columns: ticker, sector")
+    return df.set_index("ticker")["sector"]
 
 
 def load_price_panel(
